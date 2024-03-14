@@ -4,16 +4,18 @@ import sys
 # import bencodepy - available if you need it!
 # import requests - available if you need it!
 
-# Examples:
-#
-# - decode_bencode(b"5:hello") -> b"hello"
-# - decode_bencode(b"10:hello12345") -> b"hello12345"
-def decode_bencode(bencoded_value):
+
+def decode_bencode(bencoded_value: bytes):
     if chr(bencoded_value[0]).isdigit():
-        first_colon_index = bencoded_value.find(b":")
-        if first_colon_index == -1:
-            raise ValueError("Invalid encoded value")
-        return bencoded_value[first_colon_index+1:]
+        index = bencoded_value.find(b":")
+        if index == -1:
+            raise ValueError("Invalid encoded string")
+        return bencoded_value[index+1:]
+    elif chr(bencoded_value[0]) == 'i':
+        index = bencoded_value.index(b'e')
+        if index == -1:
+            raise ValueError("Invalid encoded integer")
+        return int(bencoded_value[1:index])
     else:
         raise NotImplementedError("Only strings are supported at the moment")
 
