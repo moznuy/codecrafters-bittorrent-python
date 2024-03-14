@@ -7,14 +7,14 @@ from typing import Any
 # import requests - available if you need it!
 
 
-def _decode_bencode(bencoded_value: bytes) -> tuple[Any, int]:
+def _decode_bencode(bencoded_value: bytes) -> tuple[Any, bytes]:
     byte = bencoded_value[0]
     if chr(byte).isdigit():
         index = bencoded_value.find(b":")
         if index == -1:
             raise ValueError("Invalid encoded string")
         length = int(bencoded_value[:index])
-        raw = bencoded_value[index + 1:index+1+length].decode()
+        raw = bencoded_value[index + 1:index+1+length]
         if length != len(raw):
             raise ValueError("Invalid encoded string: length does not match")
         return raw, bencoded_value[index+1+length:]
@@ -31,16 +31,32 @@ def _decode_bencode(bencoded_value: bytes) -> tuple[Any, int]:
         return int(raw), bencoded_value[index + 1:]
 
     elif bencoded_value.startswith(b'l'):
-        res = []
+        res_l: list[Any] = []
         bencoded_value = bencoded_value[1:]
         while bencoded_value:
             if bencoded_value.startswith(b'e'):
-                return res, bencoded_value[1:]
+                return res_l, bencoded_value[1:]
             if not bencoded_value:
                 raise ValueError("Invalid encoded list")
             value, bencoded_value = _decode_bencode(bencoded_value)
-            res.append(value)
+            res_l.append(value)
 
+    elif bencoded_value.startswith(b'd'):
+        res_d: list[tuple[str, Any]] = []
+        bencoded_value = bencoded_value[1:]
+        while bencoded_value:
+            if bencoded_value.startswith(b'e'):
+                return dict(res_d), bencoded_value[1:]
+            if not bencoded_value:
+                raise ValueError("Invalid encoded dict")
+            key, bencoded_value = _decode_bencode(bencoded_value)
+            value, bencoded_value = _decode_bencode(bencoded_value)
+            if not isinstance(key, bytes):
+                raise ValueError("Invalid encoded dict: keys must be strings")
+            key_s = key.decode()  # TODO: not to do this; needed for json.dumps
+            if res_d and key_s < res_d[-1][0]:
+                raise ValueError("Invalid encoded dict: keys must sorted")
+            res_d.append((key_s, value))
 
     else:
         raise NotImplementedError("Only strings are supported at the moment")
@@ -51,6 +67,7 @@ def decode_bencode(bencoded_value: bytes):
     if rest:
         raise ValueError("data after the end")
     return result
+
 
 def bytes_to_str(data):
     if isinstance(data, bytes):
