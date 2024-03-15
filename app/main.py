@@ -149,6 +149,7 @@ def print_torrent(torrent: TorrentFile):
     print(f"Tracker URL: {torrent.announce}")
     print(f"Length: {torrent.info.length}")
     print(f"Info Hash: {torrent.sha1.hex()}")
+    print(f"Piece Length: {torrent.info.piece_length}")
     print(f"Piece Hashes:")
     for piece in torrent.info.pieces:
         print(piece.hex())
