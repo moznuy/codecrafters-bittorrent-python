@@ -3,12 +3,17 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import random
+import socket
+import string
+import struct
 import sys
+import urllib.request
+import urllib.parse
 from typing import Any
 
 
-# import bencodepy - available if you need it!
-# import requests - available if you need it!
+IGNORE_SORT_IN_DECODE = True
 
 
 def _decode_bencode(bencoded_value: bytes) -> tuple[Any, bytes]:
@@ -58,8 +63,9 @@ def _decode_bencode(bencoded_value: bytes) -> tuple[Any, bytes]:
             if not isinstance(key, bytes):
                 raise ValueError("Invalid encoded dict: keys must be strings")
             key_s = key.decode()  # TODO: not to do this; needed for json.dumps
-            if res_d and key_s < res_d[-1][0]:
-                raise ValueError("Invalid encoded dict: keys must sorted")
+            if not IGNORE_SORT_IN_DECODE:
+                if res_d and key_s < res_d[-1][0]:
+                    raise ValueError("Invalid encoded dict: keys must sorted")
             res_d.append((key_s, value))
 
     else:
@@ -93,6 +99,7 @@ def encode_bencode(value: Any) -> bytes:
         )
     raise NotImplementedError
 
+
 @dataclasses.dataclass(slots=True, frozen=True, kw_only=True)
 class TorrentFileInfo:
     length: int
@@ -113,6 +120,18 @@ class TorrentFile:
     announce: str
     info: TorrentInfo
     sha1: bytes
+
+
+@dataclasses.dataclass(slots=True, frozen=True, kw_only=True)
+class PeerRaw:
+    ip: bytes
+    port: bytes
+
+
+@dataclasses.dataclass(slots=True, frozen=True, kw_only=True)
+class Peer:
+    ip: str
+    port: int
 
 
 def chunks(lst, n):
@@ -155,6 +174,57 @@ def print_torrent(torrent: TorrentFile):
         print(piece.hex())
 
 
+def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
+    return "".join(random.choice(chars) for _ in range(size))
+
+
+PEER_ID = id_generator(20)
+PORT = 6881
+
+
+def print_peers(torrent: TorrentFile):
+    query = urllib.parse.urlencode(
+        {
+            "info_hash": torrent.sha1,
+            "peer_id": PEER_ID,
+            "port": PORT,
+            "uploaded": 0,
+            "downloaded": 0,
+            "left": torrent.info.length,
+            "compact": 1,
+        }
+    )
+    parsed = urllib.parse.urlparse(torrent.announce)
+    # print(parsed)
+    # parsed.query = query
+    url = urllib.parse.urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            query,
+            parsed.fragment,
+        )
+    )
+    # print(url)
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req) as f:
+        resp = f.read()
+    payload = decode_bencode(resp)
+    interval = payload["interval"]
+    peers_raw = list(
+        PeerRaw(ip=ip, port=port)
+        for ip, port in struct.iter_unpack("<4sH", payload["peers"])
+    )
+    peers = [
+        Peer(ip=socket.inet_ntoa(peer_raw.ip), port=socket.ntohs(peer_raw.port))
+        for peer_raw in peers_raw
+    ]
+    for peer in peers:
+        print(f"{peer.ip}:{peer.port}")
+
+
 def bytes_to_str(data):
     if isinstance(data, bytes):
         return data.decode()
@@ -173,6 +243,10 @@ def main():
         filename = sys.argv[2]
         torrent = parse_file(filename)
         print_torrent(torrent)
+    elif command == "peers":
+        filename = sys.argv[2]
+        torrent = parse_file(filename)
+        print_peers(torrent)
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
