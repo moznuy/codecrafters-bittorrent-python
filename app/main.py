@@ -103,7 +103,7 @@ class TorrentFileInfo:
 class TorrentInfo:
     name: str
     piece_length: int
-    pieces: list[str]
+    pieces: list[bytes]
     length: int | None = None
     files: list[dict] | None = None
 
@@ -149,6 +149,9 @@ def print_torrent(torrent: TorrentFile):
     print(f"Tracker URL: {torrent.announce}")
     print(f"Length: {torrent.info.length}")
     print(f"Info Hash: {torrent.sha1.hex()}")
+    print(f"Piece Hashes:")
+    for piece in torrent.info.pieces:
+        print(piece.hex())
 
 
 def bytes_to_str(data):
