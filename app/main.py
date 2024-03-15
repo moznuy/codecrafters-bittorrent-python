@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import sys
 from typing import Any
@@ -72,6 +73,26 @@ def decode_bencode(bencoded_value: bytes):
     return result
 
 
+def encode_bencode(value: Any) -> bytes:
+    if isinstance(value, str):
+        value = value.encode()
+    if isinstance(value, bytes):
+        return str(len(value)).encode() + b":" + value
+    if isinstance(value, int):
+        return b"i" + str(value).encode() + b"e"
+    if isinstance(value, list):
+        return b"l" + b"".join(encode_bencode(v) for v in value) + b"e"
+    if isinstance(value, dict):
+        return (
+            b"d"
+            + b"".join(
+                encode_bencode(key) + encode_bencode(value[key])
+                for key in sorted(value)
+            )
+            + b"e"
+        )
+    raise NotImplementedError
+
 @dataclasses.dataclass(slots=True, frozen=True, kw_only=True)
 class TorrentFileInfo:
     length: int
@@ -91,6 +112,7 @@ class TorrentInfo:
 class TorrentFile:
     announce: str
     info: TorrentInfo
+    sha1: bytes
 
 
 def chunks(lst, n):
@@ -106,24 +128,27 @@ def parse_file(filename: str):
     info_raw = payload["info"]
     assert len(info_raw["pieces"]) % 20 == 0
 
-    assert ('length' in info_raw) != ('files' in info_raw)
+    assert ("length" in info_raw) != ("files" in info_raw)
 
-    if 'length' in info_raw:
+    if "length" in info_raw:
         info = TorrentInfo(
             name=info_raw["name"].decode(),
             piece_length=info_raw["piece length"],
             pieces=list(chunks(info_raw["pieces"], 20)),
-            length=info_raw['length'],
+            length=info_raw["length"],
         )
     else:
         raise NotImplementedError
 
-    return TorrentFile(announce=payload['announce'].decode(), info=info)
+    r = encode_bencode(payload["info"])
+    sha1 = hashlib.sha1(r).digest()
+    return TorrentFile(announce=payload["announce"].decode(), info=info, sha1=sha1)
 
 
 def print_torrent(torrent: TorrentFile):
     print(f"Tracker URL: {torrent.announce}")
     print(f"Length: {torrent.info.length}")
+    print(f"Info Hash: {torrent.sha1.hex()}")
 
 
 def bytes_to_str(data):
