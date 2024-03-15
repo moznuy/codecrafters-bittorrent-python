@@ -313,6 +313,7 @@ class PeerConnection:
     piece_length: int
 
     # TODO: tmp
+    only_one: bool
     to: str
 
     pieces_needed: list[int] = dataclasses.field(default_factory=list)
@@ -320,6 +321,7 @@ class PeerConnection:
     pieces_written: dict[int, set[int]] = dataclasses.field(
         default_factory=functools.partial(collections.defaultdict, set)
     )
+    pieces_written_success: dict[int, bool] = dataclasses.field(default_factory=dict)
 
     handshake_recv: bool = False
     bitfield: bytes | None = None
@@ -329,20 +331,24 @@ class PeerConnection:
     try_write: bool = False
 
 
-def download_piece(torrent: TorrentFile, to: str, piece_no: int):
+def download(torrent: TorrentFile, to: str, piece_no: int | None):
     peers = get_peers(torrent)
     assert peers
     peer: Peer = random.choice(peers)
 
     conn = socket.create_connection((peer.ip, peer.port), timeout=10)
     handshake_msg = craft_handshake(torrent)
+    piece_count = math.ceil(torrent.info.length / torrent.info.piece_length)
+    pieces_needed = [piece_no] if piece_no is not None else list(range(piece_count))
+    only_one = True if piece_no is not None else False
     pc = PeerConnection(
         send_data=handshake_msg,
         recv_data=b"",
         to=to,
+        only_one=only_one,
         length=torrent.info.length,
         piece_length=torrent.info.piece_length,
-        pieces_needed=[piece_no],
+        pieces_needed=pieces_needed,
     )
     while True:
         if pc.send_data:
@@ -410,12 +416,14 @@ def try_write(pc: PeerConnection):
         file_size = (
             pc.piece_length if piece.index != last_piece_index else last_piece_length
         )
-        if not os.path.exists(pc.to):
-            with open(pc.to, "wb") as _:
-                pass
-            os.truncate(pc.to, file_size)
 
-        with open(pc.to, "rb+") as file:
+        filename = pc.to if pc.only_one else f"/tmp/test-piece-{piece.index}"
+        if not os.path.exists(filename):
+            with open(filename, "wb") as _:
+                pass
+            os.truncate(filename, file_size)
+
+        with open(filename, "rb+") as file:
             file.seek(piece.begin, os.SEEK_SET)
             file.write(piece.block)
 
@@ -426,10 +434,22 @@ def try_write(pc: PeerConnection):
         else:
             _set = normal_set
         if _set == pc.pieces_written[piece.index]:
-            # TODO: remove pc.to
-            print(f"Piece {piece.index} downloaded to {pc.to}.")
-            # TODO: remove later
-            exit(0)
+            pc.pieces_written_success[piece.index] = True
+            if pc.only_one:
+                print(f"Piece {piece.index} downloaded to {filename}.")
+                exit(0)
+            # print(f"Piece {piece.index} downloaded to {filename}.")
+
+    if len(pc.pieces_written_success) == len(pc.pieces_needed) and all(
+        pc.pieces_written_success.values()
+    ):
+        with open(pc.to, "wb") as result_file:
+            for piece_index in pc.pieces_written_success:
+                with open(f"/tmp/test-piece-{piece_index}", "rb") as tmp_file:
+                    result_file.write(tmp_file.read())
+
+        print(f"Downloaded test.torrent to {pc.to}")
+        exit(0)
 
 
 def parse_peer_data(pc: PeerConnection):
@@ -508,7 +528,12 @@ def main():
         filename = sys.argv[4]
         piece_no = sys.argv[5]
         torrent = parse_file(filename)
-        download_piece(torrent, to, int(piece_no))
+        download(torrent, to, int(piece_no))
+    elif command == "download":
+        to = sys.argv[3]
+        filename = sys.argv[4]
+        torrent = parse_file(filename)
+        download(torrent, to, None)
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
