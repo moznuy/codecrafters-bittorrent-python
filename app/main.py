@@ -243,7 +243,7 @@ def handshake(torrent: TorrentFile, peer: str):
     assert len(peer_id) == 20
     handshake_msg += peer_id
 
-    conn.sendall(peer_id)
+    conn.sendall(handshake_msg)
     payload = conn.recv(4096)
     peer_id = payload[48 : 48 + 20]
     print(f"Peer ID: {peer_id.hex()}")
