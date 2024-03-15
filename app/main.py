@@ -225,6 +225,30 @@ def print_peers(torrent: TorrentFile):
         print(f"{peer.ip}:{peer.port}")
 
 
+def handshake(torrent: TorrentFile, peer: str):
+    split = peer.split(":", 1)
+    assert len(split) == 2
+    ip = split[0]
+    port = int(split[1])
+
+    conn = socket.create_connection((ip, port), timeout=10)
+    protocol = b"BitTorrent protocol"
+    handshake_msg = b""
+    handshake_msg += len(protocol).to_bytes(1, byteorder="big")  # Len str
+    handshake_msg += protocol
+    handshake_msg += b"\x00" * 8  # Reserved
+    assert len(torrent.sha1) == 20
+    handshake_msg += torrent.sha1
+    peer_id = PEER_ID.encode()
+    assert len(peer_id) == 20
+    handshake_msg += peer_id
+
+    conn.sendall(peer_id)
+    payload = conn.recv(4096)
+    peer_id = payload[48 : 48 + 20]
+    print(f"Peer ID: {peer_id.hex()}")
+
+
 def bytes_to_str(data):
     if isinstance(data, bytes):
         return data.decode()
@@ -247,6 +271,11 @@ def main():
         filename = sys.argv[2]
         torrent = parse_file(filename)
         print_peers(torrent)
+    elif command == "handshake":
+        filename = sys.argv[2]
+        torrent = parse_file(filename)
+        peer = sys.argv[3]
+        handshake(torrent, peer)
     else:
         raise NotImplementedError(f"Unknown command {command}")
 
