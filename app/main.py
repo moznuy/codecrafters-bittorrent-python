@@ -395,11 +395,11 @@ def try_write(pc: PeerConnection):
     else:
         last_piece_length = pc.length % pc.piece_length
 
-    piece_fragment_count = math.ceil(pc.piece_length // (16 * 1024))
+    piece_fragment_count = math.ceil(pc.piece_length / (16 * 1024))
     # if last_piece_length == pc.piece_length:
     #     last_piece_fragment_count = piece_fragment_count
     # else:
-    last_piece_fragment_count = math.ceil(last_piece_length // (16 * 1024))
+    last_piece_fragment_count = math.ceil(last_piece_length / (16 * 1024))
     normal_set = set(range(piece_fragment_count))
     last_set = set(range(last_piece_fragment_count))
 
